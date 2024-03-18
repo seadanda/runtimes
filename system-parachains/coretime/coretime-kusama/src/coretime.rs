@@ -21,7 +21,8 @@ use cumulus_primitives_core::relay_chain;
 use frame_support::{
 	parameter_types,
 	traits::{
-		fungible::{Balanced, Credit},
+		fungible::{Balanced, Credit, Mutate},
+		tokens::{Fortitude, Precision},
 		OnUnbalanced,
 	},
 };
@@ -34,14 +35,6 @@ use sp_runtime::{
 	FixedU64,
 };
 use xcm::latest::prelude::*;
-
-pub struct CreditToCollatorPot;
-impl OnUnbalanced<Credit<AccountId, Balances>> for CreditToCollatorPot {
-	fn on_nonzero_unbalanced(credit: Credit<AccountId, Balances>) {
-		let staking_pot = CollatorSelection::account_id();
-		let _ = <Balances as Balanced<_>>::resolve(&staking_pot, credit);
-	}
-}
 
 /// A type containing the encoding of the coretime pallet in the Relay chain runtime. Used to
 /// construct any remote calls. The codec index must correspond to the index of `Coretime` in the
@@ -70,15 +63,22 @@ enum CoretimeProviderCalls {
 	),
 }
 
-parameter_types! {
-	pub const BrokerPalletId: PalletId = PalletId(*b"py/broke");
+/// Burn revenue from coretime sales. See
+/// [RFC-010](https://polkadot-fellows.github.io/RFCs/approved/0010-burn-coretime-revenue.html).
+pub struct BurnRevenue;
+impl OnUnbalanced<Credit<AccountId, Balances>> for BurnRevenue {
+	fn on_nonzero_unbalanced(credit: Credit<AccountId, Balances>) {
+		let _ = <Balances as Balanced<_>>::resolve(&AccountId::from(CoretimeBurnPotId), credit);
+	}
 }
 
 parameter_types! {
+	/// The revenue from on-demand coretime sales. This is distributed amonst those who contributed
+	/// regions to the pool.
 	pub storage CoretimeRevenue: Option<(BlockNumber, Balance)> = None;
 }
 
-/// Type that implements the `CoretimeInterface` for the allocation of Coretime. Meant to operate
+/// Type that implements the [`CoretimeInterface`] for the allocation of Coretime. Meant to operate
 /// from the parachain context. That is, the parachain provides a market (broker) for the sale of
 /// coretime, but assumes a `CoretimeProvider` (i.e. a Relay Chain) to actually provide cores.
 pub struct CoretimeAllocator;
@@ -230,10 +230,15 @@ impl AdaptPrice for PriceAdapter {
 	}
 }
 
+parameter_types! {
+	pub const BrokerPalletId: PalletId = PalletId(*b"py/broke");
+	pub const CoretimeBurnPotId: [u8; 8] = *b"crtmburn";
+}
+
 impl pallet_broker::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type Currency = Balances;
-	type OnRevenue = CreditToCollatorPot;
+	type OnRevenue = BurnRevenue;
 	#[cfg(feature = "fast-runtime")]
 	type TimeslicePeriod = ConstU32<10>;
 	#[cfg(not(feature = "fast-runtime"))]
