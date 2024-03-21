@@ -21,8 +21,7 @@ use cumulus_primitives_core::relay_chain;
 use frame_support::{
 	parameter_types,
 	traits::{
-		fungible::{Balanced, Credit, Mutate},
-		tokens::{Fortitude, Precision},
+		fungible::{Balanced, Credit},
 		OnUnbalanced,
 	},
 };
@@ -31,7 +30,7 @@ use pallet_broker::{
 };
 use parachains_common::{AccountId, Balance, BlockNumber};
 use sp_runtime::{
-	traits::{One, Saturating},
+	traits::{AccountIdConversion, One, Saturating},
 	FixedU64,
 };
 use xcm::latest::prelude::*;
@@ -63,12 +62,18 @@ enum CoretimeProviderCalls {
 	),
 }
 
+parameter_types! {
+	/// The holding account into which burnt funds will be moved at the point of sale. This will be
+	/// burnt periodically.
+	pub CoretimeBurnAccount: AccountId = PalletId(*b"py/ctbrn").into_account_truncating();
+}
+
 /// Burn revenue from coretime sales. See
 /// [RFC-010](https://polkadot-fellows.github.io/RFCs/approved/0010-burn-coretime-revenue.html).
 pub struct BurnRevenue;
 impl OnUnbalanced<Credit<AccountId, Balances>> for BurnRevenue {
 	fn on_nonzero_unbalanced(credit: Credit<AccountId, Balances>) {
-		let _ = <Balances as Balanced<_>>::resolve(&AccountId::from(CoretimeBurnPotId), credit);
+		let _ = <Balances as Balanced<_>>::resolve(&CoretimeBurnAccount::get(), credit);
 	}
 }
 
@@ -232,7 +237,6 @@ impl AdaptPrice for PriceAdapter {
 
 parameter_types! {
 	pub const BrokerPalletId: PalletId = PalletId(*b"py/broke");
-	pub const CoretimeBurnPotId: [u8; 8] = *b"crtmburn";
 }
 
 impl pallet_broker::Config for Runtime {
