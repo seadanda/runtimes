@@ -102,45 +102,44 @@ fn bulk_revenue_is_burnt() {
 		)])
 		.build()
 		.execute_with(|| {
-			let timeslice_period: u32 = <Runtime as pallet_broker::Config>::TimeslicePeriod::get();
 			// Configure broker and start sales
 			let config = ConfigRecordOf::<Runtime> {
 				advance_notice: 1,
 				interlude_length: 1,
-				leadin_length: 1,
+				leadin_length: 2,
 				region_length: 1,
 				ideal_bulk_proportion: Perbill::from_percent(100),
 				limit_cores_offered: None,
 				renewal_bump: Perbill::from_percent(3),
 				contribution_timeout: 1,
 			};
+			let ed = ExistentialDeposit::get();
 			assert_ok!(Broker::configure(RuntimeOrigin::root(), config.clone()));
-			assert_ok!(Broker::start_sales(RuntimeOrigin::root(), 100, 1));
+			assert_ok!(Broker::start_sales(RuntimeOrigin::root(), ed, 1));
 
 			let sale_start = SaleInfo::<Runtime>::get().unwrap().sale_start;
-			advance_to(sale_start + timeslice_period * config.interlude_length);
+			advance_to(sale_start + config.interlude_length);
 
 			// Check and set initial balances.
 			let broker_account = BrokerPalletId::get().into_account_truncating();
 			let coretime_burn_account = CoretimeBurnAccount::get();
 			let treasury_account = xcm_config::RelayTreasuryPalletAccount::get();
-			assert_ok!(Balances::mint_into(
-				&AccountId::from(ALICE),
-				1000 * ExistentialDeposit::get()
-			));
+			assert_ok!(Balances::mint_into(&AccountId::from(ALICE), 10 * ed));
 			let alice_balance_before = Balances::balance(&AccountId::from(ALICE));
 			let treasury_balance_before = Balances::balance(&treasury_account);
 			let broker_balance_before = Balances::balance(&broker_account);
 			let burn_balance_before = Balances::balance(&coretime_burn_account);
 
-			assert_ok!(Broker::purchase(RuntimeOrigin::signed(AccountId::from(ALICE)), 500));
-			// Alice decreases
+			// Purchase coretime.
+			assert_ok!(Broker::purchase(RuntimeOrigin::signed(AccountId::from(ALICE)), 5 * ed));
+
+			// Alice decreases.
 			assert!(Balances::balance(&AccountId::from(ALICE)) < alice_balance_before);
-			// Treasury balance does not increase
+			// Treasury balance does not increase.
 			assert_eq!(Balances::balance(&treasury_account), treasury_balance_before);
-			// Broker pallet account does not increase
+			// Broker pallet account does not increase.
 			assert_eq!(Balances::balance(&broker_account), broker_balance_before);
-			// Coretime burn pot gets the funds
+			// Coretime burn pot gets the funds.
 			assert!(Balances::balance(&coretime_burn_account) > burn_balance_before);
 
 			// They're burnt at the end of the sale. TODO
