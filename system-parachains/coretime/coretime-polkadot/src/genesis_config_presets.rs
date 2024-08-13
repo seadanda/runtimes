@@ -28,24 +28,25 @@ fn coretime_polkadot_genesis(
 	endowed_accounts: Vec<AccountId>,
 	id: ParaId,
 ) -> serde_json::Value {
-	serde_json::json!({
-		"balances": BalancesConfig {
+	serde_json::json!(RuntimeGenesisConfig {
+		balances: BalancesConfig {
 			balances: endowed_accounts
 				.iter()
 				.cloned()
 				.map(|k| (k, CORETIME_POLKADOT_ED * 4096 * 4096))
 				.collect(),
 		},
-		"parachainInfo": ParachainInfoConfig {
-			parachain_id: id,
-			..Default::default()
-		},
-		"collatorSelection": CollatorSelectionConfig {
+		collator_selection: CollatorSelectionConfig {
 			invulnerables: invulnerables.iter().cloned().map(|(acc, _)| acc).collect(),
 			candidacy_bond: CORETIME_POLKADOT_ED * 16,
 			..Default::default()
 		},
-		"session": SessionConfig {
+		parachain_info: ParachainInfoConfig { parachain_id: id, ..Default::default() },
+		polkadot_xcm: PolkadotXcmConfig {
+			safe_xcm_version: Some(SAFE_XCM_VERSION),
+			..Default::default()
+		},
+		session: SessionConfig {
 			keys: invulnerables
 				.into_iter()
 				.map(|(acc, aura)| {
@@ -57,11 +58,7 @@ fn coretime_polkadot_genesis(
 				})
 				.collect(),
 		},
-		"polkadotXcm": {
-			"safeXcmVersion": Some(SAFE_XCM_VERSION),
-		},
-		// no need to pass anything to aura, in fact it will panic if we do. Session will take care
-		// of this. `aura: Default::default()`
+		..Default::default()
 	})
 }
 
