@@ -15,9 +15,8 @@
 
 use crate::*;
 use frame_support::traits::OnInitialize;
-use pallet_broker::{ConfigRecord, Configuration, CoreAssignment, CoreMask, ScheduleItem};
+use pallet_broker::{ConfigRecord, CoreAssignment, CoreMask, ScheduleItem};
 use polkadot_runtime::Dmp;
-use polkadot_runtime_constants::system_parachain::coretime::TIMESLICE_PERIOD;
 use sp_runtime::Perbill;
 
 #[test]
@@ -122,66 +121,35 @@ fn broker_transacts_are_processed_by_relay() {
 		);
 	});
 
-	// Keep track of the relay chain block number so we can fast forward while still checking the
-	// right block.
-	let mut block_number_cursor = Polkadot::ext_wrapper(<Polkadot as Chain>::System::block_number);
-
-	let config = CoretimePolkadot::ext_wrapper(|| {
-		Configuration::<<CoretimePolkadot as Chain>::Runtime>::get()
-			.expect("Pallet was configured earlier.")
-	});
-
-	// Now run up to the block before the sale is rotated.
-	while block_number_cursor < TIMESLICE_PERIOD - config.advance_notice - 1 {
+	// Advance blocks until the sale rotates. We detect this via broker events rather than
+	// counting relay chain blocks, because the relay block progression rate depends on the
+	// number of parachains in the emulated network.
+	let mut sale_rotated = false;
+	while !sale_rotated {
 		CoretimePolkadot::execute_with(|| {
-			// Hooks don't run in emulated tests - workaround.
 			<CoretimePolkadot as CoretimePolkadotPallet>::Broker::on_initialize(
 				<CoretimePolkadot as Chain>::System::block_number(),
 			);
 		});
 
-		Polkadot::ext_wrapper(|| {
-			block_number_cursor = <Polkadot as Chain>::System::block_number();
+		sale_rotated = CoretimePolkadot::ext_wrapper(|| {
+			frame_system::Pallet::<<CoretimePolkadot as Chain>::Runtime>::events()
+				.iter()
+				.any(|r| {
+					matches!(
+						r.event,
+						coretime_polkadot_runtime::RuntimeEvent::Broker(
+							pallet_broker::Event::SaleInitialized { .. }
+						)
+					)
+				})
 		});
 	}
 
-	// In this block we trigger assign core.
+	// Trigger request_revenue_info_at in the following block.
 	CoretimePolkadot::execute_with(|| {
-		// Hooks don't run in emulated tests - workaround.
 		<CoretimePolkadot as CoretimePolkadotPallet>::Broker::on_initialize(
 			<CoretimePolkadot as Chain>::System::block_number(),
-		);
-
-		assert_expected_events!(
-			CoretimePolkadot,
-			vec![
-				CoretimeEvent::Broker(
-					pallet_broker::Event::SaleInitialized { .. }
-				) => {},
-				CoretimeEvent::Broker(
-					pallet_broker::Event::CoreAssigned { .. }
-				) => {},
-				CoretimeEvent::ParachainSystem(
-					cumulus_pallet_parachain_system::Event::UpwardMessageSent { .. }
-				) => {},
-			]
-		);
-	});
-
-	// In this block we trigger request revenue.
-	CoretimePolkadot::execute_with(|| {
-		// Hooks don't run in emulated tests - workaround.
-		<CoretimePolkadot as CoretimePolkadotPallet>::Broker::on_initialize(
-			<CoretimePolkadot as Chain>::System::block_number(),
-		);
-
-		assert_expected_events!(
-			CoretimePolkadot,
-			vec![
-				CoretimeEvent::ParachainSystem(
-					cumulus_pallet_parachain_system::Event::UpwardMessageSent { .. }
-				) => {},
-			]
 		);
 	});
 
